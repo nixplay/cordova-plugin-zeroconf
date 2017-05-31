@@ -1,16 +1,23 @@
+/*
+ * Cordova ZeroConf Plugin
+ *
+ * ZeroConf plugin for Cordova/Phonegap
+ * by Sylvain Brejeon
+ */
+
 import Foundation
 
-@objc(ZeroConf) open class ZeroConf : CDVPlugin  {
+@objc(ZeroConf) class ZeroConf : CDVPlugin  {
     
-    fileprivate var publishers: [String: Publisher]!
-    fileprivate var browsers: [String: Browser]!
+    private var publishers: [String: Publisher]!
+    private var browsers: [String: Browser]!
     
-    override open func pluginInitialize() {
+    override func pluginInitialize() {
         publishers  = [:]
         browsers = [:]
     }
     
-    override open func onAppTerminate() {
+    override func onAppTerminate() {
         for (_, publisher) in publishers {
             publisher.destroy()
         }
@@ -22,62 +29,50 @@ import Foundation
         browsers.removeAll()
     }
     
-    open func getHostname(_ command: CDVInvokedUrlCommand) {
+    func register(command: CDVInvokedUrlCommand) {
         
-        let hostname = Hostname.get()
-        
-        #if DEBUG
-            print("ZeroConf: hostname \(hostname)")
-        #endif
-
-        let pluginResult = CDVPluginResult(status:CDVCommandStatus_OK, messageAs: hostname)
-        self.commandDelegate?.send(pluginResult, callbackId: command.callbackId)
-    }
-
-    open func register(_ command: CDVInvokedUrlCommand) {
-        
-        let type = command.argument(at: 0) as! String
-        let domain = command.argument(at: 1) as! String
-        let name = command.argument(at: 2) as! String
-        let port = command.argument(at: 3) as! Int
+        let fullType = command.argumentAtIndex(0) as! String
+        let fullTypeArr = fullType.componentsSeparatedByString(".")
+        let domain = fullTypeArr[2]
+        let type = fullTypeArr[0] + "." + fullTypeArr[1]
+        let name = command.argumentAtIndex(1) as! String
+        let port = command.argumentAtIndex(2) as! Int
         
         #if DEBUG
-            print("ZeroConf: register \(type + domain + "@@@" + name)")
+            print("ZeroConf: register \(fullType + "@@@" + name)")
         #endif
         
-        var txtRecord: [String: Data]?
-        if let dict = command.arguments[4] as? [String: String] {
-            txtRecord = [:]
+        var txtRecord: [String: NSData] = [:]
+        if let dict = command.arguments[3] as? [String: String] {
             for (key, value) in dict {
-                txtRecord?[key] = value.data(using: String.Encoding.utf8)
+                txtRecord[key] = value.dataUsingEncoding(NSUTF8StringEncoding)
             }
         }
         
-        let publisher = Publisher(withDomain: domain, withType: type, withName: name, withPort: port, withTxtRecord: txtRecord, withCallbackId: command.callbackId)
+        let publisher = Publisher(withDomain: domain, withType: type, withName: name, withPort: port, withTxtRecord: txtRecord)
         publisher.commandDelegate = commandDelegate
         publisher.register()
-        publishers[type + domain + "@@@" + name] = publisher
+        publishers[fullType + "@@@" + name] = publisher
         
     }
     
-    open func unregister(_ command: CDVInvokedUrlCommand) {
+    func unregister(command: CDVInvokedUrlCommand) {
         
-        let type = command.argument(at: 0) as! String
-        let domain = command.argument(at: 1) as! String
-        let name = command.argument(at: 2) as! String
+        let fullType = command.argumentAtIndex(0) as! String
+        let name = command.argumentAtIndex(1) as! String
         
         #if DEBUG
-            print("ZeroConf: unregister \(type + domain + "@@@" + name)")
+            print("ZeroConf: unregister \(fullType + "@@@" + name)")
         #endif
         
-        if let publisher = publishers[type + domain + "@@@" + name] {
+        if let publisher = publishers[fullType + "@@@" + name] {
             publisher.unregister();
-            publishers.removeValue(forKey: type + domain + "@@@" + name)
+            publishers.removeValueForKey(fullType + "@@@" + name)
         }
         
     }
     
-    open func stop(_ command: CDVInvokedUrlCommand) {
+    func stop(command: CDVInvokedUrlCommand) {
         #if DEBUG
             print("ZeroConf: stop")
         #endif
@@ -88,39 +83,40 @@ import Foundation
         publishers.removeAll()
     }
     
-    open func watch(_ command: CDVInvokedUrlCommand) {
+    func watch(command: CDVInvokedUrlCommand) {
         
-        let type = command.argument(at: 0) as! String
-        let domain = command.argument(at: 1) as! String
+        let fullType = command.argumentAtIndex(0) as! String
+        let fullTypeArr = fullType.characters.split{$0 == "."}.map(String.init)
+        let domain = fullTypeArr[2]
+        let type = fullTypeArr[0] + "." + fullTypeArr[1]
         
         #if DEBUG
-            print("ZeroConf: watch \(type + domain)")
+            print("ZeroConf: watch \(fullType)")
         #endif
         
         let browser = Browser(withDomain: domain, withType: type, withCallbackId: command.callbackId)
         browser.commandDelegate = commandDelegate
         browser.watch()
-        browsers[type + domain] = browser
+        browsers[fullType] = browser
         
     }
     
-    open func unwatch(_ command: CDVInvokedUrlCommand) {
+    func unwatch(command: CDVInvokedUrlCommand) {
         
-        let type = command.argument(at: 0) as! String
-        let domain = command.argument(at: 1) as! String
+        let fullType = command.argumentAtIndex(0) as! String
         
         #if DEBUG
-            print("ZeroConf: unwatch \(type + domain)")
+            print("ZeroConf: unwatch \(fullType)")
         #endif
         
-        if let browser = browsers[type + domain] {
+        if let browser = browsers[fullType] {
             browser.unwatch();
-            browsers.removeValue(forKey: type + domain)
+            browsers.removeValueForKey(fullType)
         }
         
     }
     
-    open func close(_ command: CDVInvokedUrlCommand) {
+    func close(command: CDVInvokedUrlCommand) {
         #if DEBUG
             print("ZeroConf: close")
         #endif
@@ -131,40 +127,32 @@ import Foundation
         browsers.removeAll()
     }
     
-    internal class Publisher: NSObject, NetServiceDelegate {
+    private class Publisher {
         
-        var nsp: NetService?
+        var nsns: NSNetService?
         var domain: String
         var type: String
         var name: String
         var port: Int
-        var txtRecord: [String: Data]?
-        var callbackId: String
+        var txtRecord: [String: NSData] = [:]
         var commandDelegate: CDVCommandDelegate?
         
-        init (withDomain domain: String, withType type: String, withName name: String, withPort port: Int, withTxtRecord txtRecord: [String: Data]?, withCallbackId callbackId: String) {
+        init (withDomain domain: String, withType type: String, withName name: String, withPort port: Int, withTxtRecord txtRecord: [String: NSData]) {
             self.domain = domain
             self.type = type
             self.name = name
             self.port = port
             self.txtRecord = txtRecord
-            self.callbackId = callbackId
         }
         
         func register() {
             
             // Netservice
-            let service = NetService(domain: domain, type: type , name: name, port: Int32(port))
-            nsp = service
-            service.delegate = self
+            let service = NSNetService(domain: domain, type: type , name: name, port: Int32(port))
+            nsns = service
+            service.setTXTRecordData(NSNetService.dataFromTXTRecordDictionary(txtRecord))
             
-            if let record = txtRecord {
-                if record.count > 0 {
-                    service.setTXTRecord(NetService.data(fromTXTRecord: record))
-                }
-            }
-            
-            commandDelegate?.run(inBackground: {
+            commandDelegate?.runInBackground({
                 service.publish()
             })
             
@@ -172,58 +160,37 @@ import Foundation
         
         func unregister() {
             
-            if let service = nsp {
-                service.stop()
+            if let service = nsns {
+                
+                commandDelegate?.runInBackground({
+                    service.stop()
+                })
+                
+                nsns = nil
+                commandDelegate = nil
             }
             
         }
         
         func destroy() {
             
-            if let service = nsp {
+            if let service = nsns {
                 service.stop()
+                nsns = nil
+                commandDelegate = nil
             }
             
         }
         
-        @objc func netServiceDidPublish(_ netService: NetService) {
-            #if DEBUG
-                print("ZeroConf: netService:didPublish:\(netService)")
-            #endif
-            
-            let service = ZeroConf.jsonifyService(netService)
-            
-            let message: NSDictionary = NSDictionary(objects: ["registered", service], forKeys: ["action" as NSCopying, "service" as NSCopying])
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: message as! [AnyHashable: Any])
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
-        }
-    
-        @objc func netService(_ netService: NetService, didNotPublish errorDict: [String : NSNumber]) {
-            #if DEBUG
-                print("ZeroConf: netService:didNotPublish:\(netService) \(errorDict)")
-            #endif
-            
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
-        }
-        
-        @objc func netServiceDidStop(_ netService: NetService) {
-            nsp = nil
-            commandDelegate = nil
-            
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
-        }
-        
     }
     
-    internal class Browser: NSObject, NetServiceDelegate, NetServiceBrowserDelegate {
+    private class Browser: NSObject, NSNetServiceDelegate, NSNetServiceBrowserDelegate {
         
-        var nsb: NetServiceBrowser?
+        var nsb: NSNetServiceBrowser?
         var domain: String
         var type: String
         var callbackId: String
-        var services: [String: NetService] = [:]
+        var services: [String: NSNetService] = [:]
         var commandDelegate: CDVCommandDelegate?
         
         init (withDomain domain: String, withType type: String, withCallbackId callbackId: String) {
@@ -234,25 +201,35 @@ import Foundation
         
         func watch() {
             
-             // Net service browser
-            let browser = NetServiceBrowser()
+            // Net service browser
+            let browser = NSNetServiceBrowser()
             nsb = browser
             browser.delegate = self
             
-            commandDelegate?.run(inBackground: {
-                browser.searchForServices(ofType: self.type, inDomain: self.domain)
+            commandDelegate?.runInBackground({
+                browser.searchForServicesOfType(self.type, inDomain: self.domain)
             })
             
             let pluginResult = CDVPluginResult(status: CDVCommandStatus_NO_RESULT)
-            pluginResult?.setKeepCallbackAs(true)
+            pluginResult.setKeepCallbackAsBool(true)
             
         }
         
         func unwatch() {
             
             if let service = nsb {
-                service.stop()
+                
+                commandDelegate?.runInBackground({
+                    service.stop()
+                })
+                
+                nsb = nil
+                services.removeAll()
+                commandDelegate = nil
             }
+            
+            let pluginResult = CDVPluginResult(status: CDVCommandStatus_NO_RESULT)
+            pluginResult.setKeepCallbackAsBool(false)
             
         }
         
@@ -260,143 +237,135 @@ import Foundation
             
             if let service = nsb {
                 service.stop()
+                nsb = nil
+                services.removeAll()
+                commandDelegate = nil
             }
             
         }
         
-        @objc func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String : NSNumber]) {
-            #if DEBUG
-                print("ZeroConf: netServiceBrowser:didNotSearch:\(netService) \(errorDict)")
-            #endif
-            
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
-        }
-        
-        @objc func netServiceBrowser(_ netServiceBrowser: NetServiceBrowser,
-            didFind netService: NetService,
-            moreComing moreServicesComing: Bool) {
-                #if DEBUG
-                    print("ZeroConf: netServiceBrowser:didFindService:\(netService)")
-                #endif
-                netService.delegate = self
-                netService.resolve(withTimeout: 0)
-                services[netService.name] = netService // keep strong reference to catch didResolveAddress
-        }
-        
-        @objc func netServiceDidResolveAddress(_ netService: NetService) {
-            #if DEBUG
-                print("ZeroConf: netService:didResolveAddress:\(netService)")
-            #endif
-            
-            let service = ZeroConf.jsonifyService(netService)
-            
-            let message: NSDictionary = NSDictionary(objects: ["added", service], forKeys: ["action" as NSCopying, "service" as NSCopying])
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: message as! [AnyHashable: Any])
-            pluginResult?.setKeepCallbackAs(true)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
-        }
-        
-        @objc func netService(_ netService: NetService, didNotResolve errorDict: [String : NSNumber]) {
-            #if DEBUG
-                print("ZeroConf: netService:didNotResolve:\(netService) \(errorDict)")
-            #endif
-            
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR)
-            pluginResult?.setKeepCallbackAs(true)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
-        }
-        
-        @objc func netServiceBrowser(_ netServiceBrowser: NetServiceBrowser,
-                                     didRemove netService: NetService,
+        @objc func netServiceBrowser(netServiceBrowser: NSNetServiceBrowser,
+                                     didFindService netService: NSNetService,
                                      moreComing moreServicesComing: Bool) {
             #if DEBUG
-                print("ZeroConf: netServiceBrowser:didRemoveService:\(netService)")
+                print("netServiceDidFindService:\(netService)")
             #endif
-            services.removeValue(forKey: netService.name)
-            
-            let service = ZeroConf.jsonifyService(netService)
-            
-            let message: NSDictionary = NSDictionary(objects: ["removed", service], forKeys: ["action" as NSCopying, "service" as NSCopying])
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: message as! [AnyHashable: Any])
-            pluginResult?.setKeepCallbackAs(true)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
+            netService.delegate = self
+            netService.resolveWithTimeout(0)
+            services[netService.name] = netService // keep strong reference to catch didResolveAddress
         }
         
-        @objc func netServiceDidStop(_ netService: NetService) {
-            nsb = nil
-            services.removeAll()
-            commandDelegate = nil
+        @objc func netServiceBrowser(netServiceBrowser: NSNetServiceBrowser,
+                                     didRemoveService netService: NSNetService,
+                                     moreComing moreServicesComing: Bool) {
+            #if DEBUG
+                print("netServiceDidRemoveService:\(netService)")
+            #endif
+            services.removeValueForKey(netService.name)
             
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK)
-            commandDelegate?.send(pluginResult, callbackId: callbackId)
+            let service = jsonifyService(netService)
+            
+            let message: NSDictionary = NSDictionary(objects: ["removed", service], forKeys: ["action", "service"])
+            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAsDictionary: message as [NSObject : AnyObject])
+            pluginResult.setKeepCallbackAsBool(true)
+            commandDelegate?.sendPluginResult(pluginResult, callbackId: callbackId)
         }
         
-    }
-    
-    fileprivate static func jsonifyService(_ netService: NetService) -> NSDictionary {
+        @objc func netServiceDidResolveAddress(netService: NSNetService) {
+            #if DEBUG
+                print("netServiceDidResolveAddress:\(netService)")
+            #endif
+            
+            let service = jsonifyService(netService)
+            
+            let message: NSDictionary = NSDictionary(objects: ["added", service], forKeys: ["action", "service"])
+            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAsDictionary: message as [NSObject : AnyObject])
+            pluginResult.setKeepCallbackAsBool(true)
+            commandDelegate?.sendPluginResult(pluginResult, callbackId: callbackId)
+        }
         
-        var ipv4Addresses: [String] = []
-        var ipv6Addresses: [String] = []
-        for address in netService.addresses! {
-            if let family = extractFamily(address) {
-                if  family == 4 {
-                    if let addr = extractAddress(address) {
-                        ipv4Addresses.append(addr)
+        private func jsonifyService(netService: NSNetService) -> NSDictionary {
+            var service: NSDictionary = NSDictionary()
+            if netService.name.hasPrefix("NixplayNSDServer") {
+                let addresses: [String] = IP(netService.addresses)
+                
+                var txtRecord: [String: String] = [:]
+                
+                let txtData = netService.TXTRecordData();
+                if txtData == nil {
+                    return [:];
+                }
+                
+                let datastring: NSString! = NSString(data: txtData!, encoding: NSUTF8StringEncoding)
+                if datastring.containsString("isPaired=") && datastring.containsString("serialNumber=") && datastring.containsString("model=")   {
+                    let dict = NSNetService.dictionaryFromTXTRecordData(txtData!);
+                    for (key, data) in dict {
+                        txtRecord[key] = String(data: data, encoding:NSUTF8StringEncoding)
                     }
-                } else if family == 6 {
-                    if let addr = extractAddress(address) {
-                        ipv6Addresses.append(addr)
+                    
+                }
+                
+                service = NSDictionary(
+                    objects: [netService.domain, netService.type, netService.port, netService.name, netService.hostName!, addresses, txtRecord],
+                    forKeys: ["domain", "type", "port", "name", "server", "addresses", "txtRecord"])
+                
+                
+            }
+            return service
+        }
+        
+        // http://dev.eltima.com/post/99996366184/using-bonjour-in-swift
+        private func IP(addresses: [NSData]?) -> [String] {
+            var ips: [String] = []
+            if addresses != nil {
+                for addressBytes in addresses! {
+                    var inetAddress : sockaddr_in!
+                    var inetAddress6 : sockaddr_in6!
+                    //NSData’s bytes returns a read-only pointer to the receiver’s contents.
+                    let inetAddressPointer = UnsafePointer<sockaddr_in>(addressBytes.bytes)
+                    //Access the underlying raw memory
+                    inetAddress = inetAddressPointer.memory
+                    if inetAddress.sin_family == __uint8_t(AF_INET) {
+                    }
+                    else {
+                        if inetAddress.sin_family == __uint8_t(AF_INET6) {
+                            let inetAddressPointer6 = UnsafePointer<sockaddr_in6>(addressBytes.bytes)
+                            inetAddress6 = inetAddressPointer6.memory
+                            inetAddress = nil
+                        }
+                        else {
+                            inetAddress = nil
+                        }
+                    }
+                    var ipString : UnsafePointer<CChar>?
+                    //static func alloc(num: Int) -> UnsafeMutablePointer
+                    let ipStringBuffer = UnsafeMutablePointer<CChar>.alloc(Int(INET6_ADDRSTRLEN))
+                    if inetAddress != nil {
+                        var addr = inetAddress.sin_addr
+                        ipString = inet_ntop(Int32(inetAddress.sin_family),
+                                             &addr,
+                                             ipStringBuffer,
+                                             __uint32_t (INET6_ADDRSTRLEN))
+                    } else {
+                        if inetAddress6 != nil {
+                            var addr = inetAddress6.sin6_addr
+                            ipString = inet_ntop(Int32(inetAddress6.sin6_family),
+                                                 &addr,
+                                                 ipStringBuffer,
+                                                 __uint32_t(INET6_ADDRSTRLEN))
+                        }
+                    }
+                    if ipString != nil {
+                        let ip = String.fromCString(ipString!)
+                        if ip != nil {
+                            ips.append(ip!)
+                        }
                     }
                 }
             }
+            return ips
         }
         
-        if ipv6Addresses.count > 1 {
-            ipv6Addresses = Array(Set(ipv6Addresses))
-        }
-        
-        var txtRecord: [String: String] = [:]
-        if let txtRecordData = netService.txtRecordData() {
-            let dict = NetService.dictionary(fromTXTRecord: txtRecordData)
-            for (key, data) in dict {
-                txtRecord[key] = String(data: data, encoding:String.Encoding.utf8)
-            }
-        }
-        
-        var hostName:String = ""
-        if netService.hostName != nil {
-            hostName = netService.hostName!
-        }
-        
-        let service: NSDictionary = NSDictionary(
-            objects: [netService.domain, netService.type, netService.name, netService.port, hostName, ipv4Addresses, ipv6Addresses, txtRecord],
-            forKeys: ["domain" as NSCopying, "type" as NSCopying, "name" as NSCopying, "port" as NSCopying, "hostname" as NSCopying, "ipv4Addresses" as NSCopying, "ipv6Addresses" as NSCopying, "txtRecord" as NSCopying])
-        
-        return service
-    }
-    
-    fileprivate static func extractFamily(_ addressBytes:Data) -> Int? {
-        let addr = (addressBytes as NSData).bytes.load(as: sockaddr.self)
-        if (addr.sa_family == sa_family_t(AF_INET)) {
-            return 4
-        }
-        else if (addr.sa_family == sa_family_t(AF_INET6)) {
-            return 6
-        }
-        else {
-            return nil
-        }
-    }
-    
-    fileprivate static func extractAddress(_ addressBytes:Data) -> String? {
-        var addr = (addressBytes as NSData).bytes.load(as: sockaddr.self)
-        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-        if (getnameinfo(&addr, socklen_t(addr.sa_len), &hostname,
-                        socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST) == 0) {
-            return String(cString: hostname)
-        }
-        return nil
     }
     
 }
