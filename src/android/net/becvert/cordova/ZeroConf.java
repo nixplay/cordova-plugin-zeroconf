@@ -509,7 +509,7 @@ public class ZeroConf extends CordovaPlugin {
                 status.put("action", action);
                 //hotfixed for mobile app
                 JSONObject jsonService = jsonifyService(service);
-                if(services.containsKey(jsonService.getString("name"))) {
+                if(!services.containsKey(jsonService.getString("name"))) {
                     if(jsonService.getJSONObject("txtRecord").has("isPaired")){
                         services.put(jsonService.getString("name"),jsonService);
                     }
