@@ -1,6 +1,21 @@
 package net.becvert.cordova;
 
-import static android.content.Context.WIFI_SERVICE;
+import android.content.Context;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.util.Log;
+
+import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaInterface;
+import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.PluginResult;
+import org.apache.cordova.PluginResult.Status;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -22,22 +37,7 @@ import javax.jmdns.ServiceEvent;
 import javax.jmdns.ServiceInfo;
 import javax.jmdns.ServiceListener;
 
-import org.apache.cordova.CallbackContext;
-import org.apache.cordova.CordovaInterface;
-import org.apache.cordova.CordovaPlugin;
-import org.apache.cordova.CordovaWebView;
-import org.apache.cordova.PluginResult;
-import org.apache.cordova.PluginResult.Status;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import android.content.Context;
-import android.net.wifi.WifiManager;
-import android.os.Build;
-import android.provider.Settings;
-import android.text.TextUtils;
-import android.util.Log;
+import static android.content.Context.WIFI_SERVICE;
 
 public class ZeroConf extends CordovaPlugin {
 
@@ -50,6 +50,7 @@ public class ZeroConf extends CordovaPlugin {
     private List<InetAddress> addresses;
     private List<InetAddress> ipv6Addresses;
     private List<InetAddress> ipv4Addresses;
+    private HashMap<String,JSONObject> services;
     private String hostname;
 
     public static final String ACTION_GET_HOSTNAME = "getHostname";
@@ -72,6 +73,7 @@ public class ZeroConf extends CordovaPlugin {
         WifiManager wifi = (WifiManager) context.getSystemService(WIFI_SERVICE);
         lock = wifi.createMulticastLock("ZeroConfPluginLock");
         lock.setReferenceCounted(false);
+        services = new HashMap<String, JSONObject>();
 
         try {
             addresses = new ArrayList<InetAddress>();
@@ -131,6 +133,9 @@ public class ZeroConf extends CordovaPlugin {
             } finally {
                 browserManager = null;
             }
+        }
+        if(services != null){
+            services.clear();
         }
         if (lock != null) {
             lock.release();
@@ -488,6 +493,8 @@ public class ZeroConf extends CordovaPlugin {
             Log.d(TAG, "Added");
 
             sendCallback("added", ev.getInfo());
+            //hotfixed for mobile app
+            sendCallback("resolved", ev.getInfo());
         }
 
         public void sendCallback(String action, ServiceInfo service) {
@@ -498,8 +505,19 @@ public class ZeroConf extends CordovaPlugin {
 
             JSONObject status = new JSONObject();
             try {
+
                 status.put("action", action);
-                status.put("service", jsonifyService(service));
+                //hotfixed for mobile app
+                JSONObject jsonService = jsonifyService(service);
+                if(services.containsKey(jsonService.getString("name"))) {
+                    if(jsonService.getJSONObject("txtRecord").has("isPaired")){
+                        services.put(jsonService.getString("name"),jsonService);
+                    }
+
+                }else{
+                    jsonService = services.get(jsonService.getString("name"));
+                }
+                status.put("service", jsonService);
 
                 Log.d(TAG, "Sending result: " + status.toString());
 
