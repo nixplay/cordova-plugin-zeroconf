@@ -1,7 +1,25 @@
+## [1.3.1] - 2018-01-02
+
+- [Android] acquiring Multicast lock on browsing only
+- [iOS] updating cordova-plugin-add-swift-support dependency to version 1.7.1
+
+## [1.3.0] - 2017-11-23
+
+- Added `reInit()` method to allow for runtime plugin reset
+- [iOS] Added `close()` callback (per [#52](https://github.com/becvert/cordova-plugin-zeroconf/issues/52))
+- [iOS] Added `stop()` callback
+
+## [1.2.8] - 2017-10-13
+
+- [Android] fixing NPE when calling close right after unwatch and stop right after unregister
+- [Android] fixing getHostName for API 26+
+- [Android] upgrading jmdns should fix slow closing
+- [Android] upgrading to [org.jmdns:jmdns:3.5.3](https://github.com/jmdns/jmdns)
+
 ## [1.2.7] - 2017-08-31
 
-- setting version of cordova-plugin-add-swift-support dependency.
 - [Android] fixing watchAddressFamily option not applied
+- [iOS] setting version of cordova-plugin-add-swift-support dependency.
 
 ## [1.2.6] - 2017-08-07
 
