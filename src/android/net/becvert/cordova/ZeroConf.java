@@ -290,10 +290,11 @@ public class ZeroConf extends CordovaPlugin {
             Log.d(TAG, "Unwatch " + type + domain);
 
             if (browserManager != null) {
+                final BrowserManager bm = browserManager;
                 cordova.getThreadPool().execute(new Runnable() {
                     @Override
                     public void run() {
-                        browserManager.unwatch(type, domain);
+                        bm.unwatch(type, domain);
                         callbackContext.success();
                     }
                 });
